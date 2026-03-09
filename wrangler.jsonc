@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "thoughtboard",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-08",
+
+  // D1 — structured feedback storage (raw + AI-processed)
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "thoughtboard-db",
+      "database_id": "f8e35fa5-3820-4f14-8ce9-9fdab04cd6b2"
+    }
+  ],
+
+  // Workers AI — sentiment analysis, theme classification, conversational query
+  "ai": {
+    "binding": "AI"
+  },
+
+  // Workflows — ingestion-to-analysis pipeline
+  "workflows": [
+    {
+      "name": "feedback-pipeline",
+      "binding": "FEEDBACK_PIPELINE",
+      "class_name": "FeedbackPipeline"
+    }
+  ]
+}

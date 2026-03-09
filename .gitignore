@@ -1,3 +1,9 @@
+# Cloudflare local dev state
+.wrangler/
+
+# Claude Code local settings
+.claude/
+
 # Logs
 logs
 *.log

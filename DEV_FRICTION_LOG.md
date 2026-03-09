@@ -44,6 +44,12 @@ Technical friction encountered during Thoughtboard development. Maintained by Cl
 - **Resolution:** Added `/pipeline/run-batch` POST endpoint to the Worker. A local `scripts/run-pipeline.js` fetches unprocessed IDs via wrangler CLI and drives the endpoint in sequential batches of 20, each within budget. The `FeedbackPipeline` Workflow class remains for incremental future runs.
 - **Source:** Trial and error / observed behavior across 3 pipeline architecture iterations
 
+### [2026-03-09 02:30] Local D1 requires manual migration + pipeline run — wrangler dev starts empty
+- **What happened:** `wrangler dev` starts with a completely empty local D1 instance. Running `wrangler d1 migrations apply --local` is required to create tables; then the full classification pipeline must be run against localhost to populate `feedback_processed`. Without this, every API route returns a 500 with `D1_ERROR: no such table: feedback_processed`.
+- **Impact:** Dashboard showed blank/500 errors on first local run. Two separate steps needed that aren't obvious from wrangler docs.
+- **Resolution:** `npx wrangler d1 migrations apply thoughtboard-db --local`, then drive `/pipeline/run-batch` 30× via curl loop. Also note: `scripts/run-pipeline.js` hardcodes the remote URL — `WORKER_URL` env var is NOT read from `process.env`, so the script always hits the deployed worker, not localhost.
+- **Source:** Trial and error
+
 ### [2026-03-09 02:00] Chart.js annotation plugin not bundled in the UMD build
 - **What happened:** Designed the sentiment trend chart to use `chartjs-plugin-annotation` for a y=0 reference line (neutral baseline). The UMD CDN build of Chart.js 4 does not include this plugin — the `annotation` options block is silently ignored unless the plugin is registered separately.
 - **Impact:** Reference line does not render without adding a second CDN script. Chose to remove the annotation block from options rather than add another CDN dependency for a cosmetic feature.

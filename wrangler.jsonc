@@ -9,7 +9,8 @@
     {
       "binding": "DB",
       "database_name": "thoughtboard-db",
-      "database_id": "f8e35fa5-3820-4f14-8ce9-9fdab04cd6b2"
+      "database_id": "f8e35fa5-3820-4f14-8ce9-9fdab04cd6b2",
+      "migrations_dir": "migrations"
     }
   ],
 

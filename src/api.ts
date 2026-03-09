@@ -18,9 +18,10 @@ function json(data: unknown, status = 200): Response {
 
 // ---- Filter utilities ----
 
-const VALID_PRODUCTS = new Set(["workers-ai", "d1", "workflows"]);
-const VALID_SOURCES  = new Set(["support_ticket", "github", "discord", "reddit", "twitter"]);
-const VALID_SENTS    = new Set(["positive", "negative", "neutral"]);
+const VALID_PRODUCTS  = new Set(["workers-ai", "d1", "workflows"]);
+const VALID_SOURCES   = new Set(["support_ticket", "github", "discord", "reddit", "twitter"]);
+const VALID_SENTS     = new Set(["positive", "negative", "neutral"]);
+const VALID_URGENCIES = new Set(["low", "medium", "high", "critical"]);
 
 /** Parse a "since" value into an ISO date string (YYYY-MM-DD), or null for "all time". */
 function parseSince(since: string | null | undefined): string | null {
@@ -48,6 +49,7 @@ type FilterOpts = {
   sources?:   string[];
   sentiment?: string | null;
   theme?:     string | null;
+  urgency?:   string | null;
 };
 
 function buildWhere(opts: FilterOpts): WhereResult {
@@ -79,6 +81,10 @@ function buildWhere(opts: FilterOpts): WhereResult {
     clauses.push("p.theme = ?");
     binds.push(opts.theme);
   }
+  if (opts.urgency && VALID_URGENCIES.has(opts.urgency)) {
+    clauses.push("p.urgency_label = ?");
+    binds.push(opts.urgency);
+  }
 
   return {
     sql: clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "",
@@ -96,6 +102,7 @@ function parseQueryFilters(url: URL): FilterOpts & { sinceRaw: string | null } {
     sources:   url.searchParams.getAll("source").filter(s => VALID_SOURCES.has(s)),
     sentiment: url.searchParams.get("sentiment"),
     theme:     url.searchParams.get("theme"),
+    urgency:   url.searchParams.get("urgency"),
   };
 }
 

@@ -7,14 +7,22 @@ const SOURCE_META = {
   twitter:        { icon: '🐦', label: 'Twitter' },
 };
 
+const URGENCY_TIPS = {
+  critical: 'Critical — demands immediate attention; blocking or causing data loss',
+  high:     'High — significant pain point; address this sprint',
+  medium:   'Medium — notable friction; address next quarter',
+  low:      'Low — minor issue or enhancement; backlog candidate',
+};
+
 /* ── Global state ───────────────────────────────────────────────── */
 const state = {
   product:        'all',
-  since:          null,   // null = all time | relative string
-  sources:        [],     // [] = all | ['discord', ...]
+  since:          null,   // null = all time | relative string e.g. '30d'
+  sources:        [],     // [] = all | ['discord', ...]  — global filter
   selectedTheme:  null,
   quoteSentiment: null,
-  quoteSources:   [],
+  quoteUrgency:   null,
+  quoteSources:   [],     // [] = falls back to global state.sources
   quotesOffset:   0,
   quotesTotal:    0,
 };
@@ -25,7 +33,7 @@ const QUOTES_PAGE = 20;
 let trendChart  = null;
 let volumeChart = null;
 
-/* ── URL param builder ──────────────────────────────────────────── */
+/* ── URL param builder (charts/stats/themes) ────────────────────── */
 function buildParams(extras = {}) {
   const p = new URLSearchParams();
   if (state.product !== 'all') p.set('product', state.product);
@@ -35,14 +43,18 @@ function buildParams(extras = {}) {
   return p.toString();
 }
 
+/* ── URL param builder (quote-board) ────────────────────────────── */
 function buildQuoteParams() {
   const p = new URLSearchParams();
   if (state.product !== 'all') p.set('product', state.product);
   if (state.since) p.set('since', state.since);
-  for (const s of state.quoteSources) p.append('source', s);
-  if (state.selectedTheme) p.set('theme', state.selectedTheme);
+  // Quote-board source filter: override when explicitly set, else inherit global
+  const effectiveSources = state.quoteSources.length > 0 ? state.quoteSources : state.sources;
+  for (const s of effectiveSources) p.append('source', s);
+  if (state.selectedTheme)  p.set('theme', state.selectedTheme);
   if (state.quoteSentiment) p.set('sentiment', state.quoteSentiment);
-  p.set('limit', QUOTES_PAGE);
+  if (state.quoteUrgency)   p.set('urgency', state.quoteUrgency);
+  p.set('limit',  QUOTES_PAGE);
   p.set('offset', state.quotesOffset);
   return p.toString();
 }
@@ -54,7 +66,7 @@ async function apiFetch(path) {
   return res.json();
 }
 
-/* ── Gauge rendering ────────────────────────────────────────────── */
+/* ── Gauge ──────────────────────────────────────────────────────── */
 function polarToCartesian(cx, cy, r, angleDeg) {
   const rad = (angleDeg - 90) * Math.PI / 180;
   return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
@@ -69,29 +81,38 @@ function arcPath(cx, cy, r, startAngle, endAngle) {
 
 function initGauge() {
   const cx = 100, cy = 100, r = 52;
-  // polarToCartesian uses 0°=top, increasing clockwise.
-  // Gauge spans 270° (left/9-o'clock) → 0° (top) → 90° (right/3-o'clock).
-  // Each segment is 60°. Sweep CW (flag=1) from left through top to right.
-  // Red:   270°→330° (left third,  negative)
-  // Amber: 330°→390° (centre third, neutral — crosses 0°/top)
-  // Green:  30°→ 90° (right third,  positive)
+  // Gauge spans left (270°/9-o'clock) → top (0°) → right (90°/3-o'clock)
+  // Track: full 180° background arc
+  document.getElementById('gauge-track').setAttribute('d', arcPath(cx, cy, r, 270, 90 + 360));
+  // Three coloured segments (60° each), CW sweep-flag=1
   document.getElementById('gauge-red').setAttribute('d',   arcPath(cx, cy, r, 270, 330));
   document.getElementById('gauge-amber').setAttribute('d', arcPath(cx, cy, r, 330, 390));
   document.getElementById('gauge-green').setAttribute('d', arcPath(cx, cy, r,  30,  90));
 }
 
+function getSentimentMeta(score) {
+  if (score == null)   return { label: '—',                cls: '' };
+  if (score <= -0.6)   return { label: 'Very Negative',    cls: 'sent-neg' };
+  if (score <= -0.2)   return { label: 'Negative',         cls: 'sent-neg' };
+  if (score <   0)     return { label: 'Slightly Negative',cls: 'sent-mid' };
+  if (score ===  0)    return { label: 'Neutral',          cls: 'sent-mid' };
+  if (score <   0.2)   return { label: 'Slightly Positive',cls: 'sent-pos' };
+  if (score <   0.6)   return { label: 'Positive',         cls: 'sent-pos' };
+  return                      { label: 'Very Positive',    cls: 'sent-pos' };
+}
+
 function setGaugeScore(score) {
-  const group = document.getElementById('gauge-needle-group');
-  const text  = document.getElementById('gauge-score-text');
-  if (score == null) {
-    group.style.transform = 'rotate(0deg)';
-    text.textContent = '—';
-    return;
-  }
-  // score -1..+1 → rotation -90°..+90°
-  const deg = score * 90;
-  group.style.transform = `rotate(${deg}deg)`;
-  text.textContent = score.toFixed(2);
+  const group    = document.getElementById('gauge-needle-group');
+  const scoreEl  = document.getElementById('gauge-score-num');
+  const labelEl  = document.getElementById('gauge-sent-label');
+  const meta     = getSentimentMeta(score);
+
+  group.style.transform = `rotate(${score != null ? score * 90 : 0}deg)`;
+
+  scoreEl.textContent = score != null ? score.toFixed(2) : '—';
+  scoreEl.className   = 'gauge-score-num ' + meta.cls;
+  labelEl.textContent = meta.label;
+  labelEl.className   = 'gauge-sent-label ' + meta.cls;
 }
 
 /* ── Trend chart ────────────────────────────────────────────────── */
@@ -99,32 +120,29 @@ function renderTrendChart(data) {
   const ctx = document.getElementById('trend-chart').getContext('2d');
   if (trendChart) trendChart.destroy();
 
-  const labels = data.map(d => d.date);
-  const scores = data.map(d => d.score);
-
   trendChart = new Chart(ctx, {
     type: 'line',
     data: {
-      labels,
+      labels: data.map(d => d.date),
       datasets: [{
         label: 'Avg Sentiment',
-        data: scores,
+        data: data.map(d => d.score),
         borderColor: '#F48120',
         borderWidth: 2,
         pointRadius: data.length > 60 ? 0 : 3,
+        pointBackgroundColor: '#F48120',
         pointHoverRadius: 5,
         fill: true,
         backgroundColor: (context) => {
-          const chart = context.chart;
-          const { ctx: c, chartArea } = chart;
+          const { ctx: c, chartArea } = context.chart;
           if (!chartArea) return 'transparent';
           const grad = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
-          grad.addColorStop(0, 'rgba(34,197,94,.25)');
-          grad.addColorStop(0.5, 'rgba(244,129,32,.05)');
-          grad.addColorStop(1, 'rgba(239,68,68,.2)');
+          grad.addColorStop(0,   'rgba(34,197,94,.22)');
+          grad.addColorStop(0.5, 'rgba(244,129,32,.06)');
+          grad.addColorStop(1,   'rgba(220,38,38,.18)');
           return grad;
         },
-        tension: 0.3,
+        tension: 0.35,
       }],
     },
     options: {
@@ -133,14 +151,14 @@ function renderTrendChart(data) {
       scales: {
         y: {
           min: -1, max: 1,
-          grid: { color: 'rgba(0,0,0,.05)' },
-          ticks: { color: '#94a3b8', font: { size: 11 } },
+          grid: { color: 'rgba(15,23,42,.05)' },
+          ticks: { color: '#94a3b8', font: { size: 11, family: 'Outfit' } },
         },
         x: {
           grid: { display: false },
           ticks: {
             color: '#94a3b8',
-            font: { size: 11 },
+            font: { size: 11, family: 'Outfit' },
             maxTicksLimit: 8,
             maxRotation: 0,
           },
@@ -148,17 +166,12 @@ function renderTrendChart(data) {
       },
       plugins: {
         legend: { display: false },
-        annotation: {
-          annotations: {
-            zeroLine: {
-              type: 'line', yMin: 0, yMax: 0,
-              borderColor: 'rgba(0,0,0,.2)',
-              borderWidth: 1,
-              borderDash: [4, 4],
-            },
-          },
-        },
         tooltip: {
+          backgroundColor: '#0f1524',
+          titleColor: 'rgba(255,255,255,.6)',
+          bodyColor: '#fff',
+          padding: 10,
+          cornerRadius: 8,
           callbacks: {
             label: (item) => {
               const d = data[item.dataIndex];
@@ -183,10 +196,11 @@ function renderVolumeChart(data) {
       datasets: [{
         label: 'Feedback',
         data: data.map(d => d.count),
-        backgroundColor: 'rgba(244,129,32,.6)',
+        backgroundColor: 'rgba(244,129,32,.55)',
         borderColor: '#F48120',
         borderWidth: 1,
         borderRadius: 3,
+        borderSkipped: false,
       }],
     },
     options: {
@@ -195,14 +209,14 @@ function renderVolumeChart(data) {
       scales: {
         y: {
           beginAtZero: true,
-          grid: { color: 'rgba(0,0,0,.05)' },
-          ticks: { color: '#94a3b8', font: { size: 11 } },
+          grid: { color: 'rgba(15,23,42,.05)' },
+          ticks: { color: '#94a3b8', font: { size: 11, family: 'Outfit' } },
         },
         x: {
           grid: { display: false },
           ticks: {
             color: '#94a3b8',
-            font: { size: 11 },
+            font: { size: 11, family: 'Outfit' },
             maxTicksLimit: 8,
             maxRotation: 0,
           },
@@ -211,6 +225,11 @@ function renderVolumeChart(data) {
       plugins: {
         legend: { display: false },
         tooltip: {
+          backgroundColor: '#0f1524',
+          titleColor: 'rgba(255,255,255,.6)',
+          bodyColor: '#fff',
+          padding: 10,
+          cornerRadius: 8,
           callbacks: {
             label: (item) => `Count: ${item.raw}`,
           },
@@ -229,10 +248,10 @@ function renderThemes(themes) {
   }
   const maxCount = themes[0].count;
   container.innerHTML = themes.map((t, i) => {
-    const pct = maxCount > 0 ? (t.count / maxCount) * 100 : 0;
-    const barColor = t.dominant_sentiment === 'positive' ? '#22c55e' :
-                     t.dominant_sentiment === 'negative' ? '#ef4444' : '#94a3b8';
-    const active = state.selectedTheme === t.theme ? 'active' : '';
+    const pct      = maxCount > 0 ? (t.count / maxCount) * 100 : 0;
+    const barColor = t.dominant_sentiment === 'positive' ? '#22c55e'
+                   : t.dominant_sentiment === 'negative' ? '#ef4444' : '#94a3b8';
+    const active   = state.selectedTheme === t.theme ? 'active' : '';
     return `
       <div class="theme-row ${active}" data-theme="${escHtml(t.theme)}">
         <span class="theme-rank">${i + 1}</span>
@@ -252,10 +271,10 @@ function renderThemes(themes) {
         clearTheme();
       } else {
         state.selectedTheme = theme;
-        state.quotesOffset = 0;
+        state.quotesOffset  = 0;
         showQuoteBoard();
         loadQuotes(false);
-        renderThemes(themes); // re-render to update active state
+        renderThemes(themes);
       }
     });
   });
@@ -263,30 +282,27 @@ function renderThemes(themes) {
 
 /* ── Stats rendering ────────────────────────────────────────────── */
 function renderStats(data) {
-  // Total
-  const totalEl = document.querySelector('#stat-total .stat-value');
+  const totalEl  = document.querySelector('#stat-total .stat-value');
   totalEl.classList.remove('skeleton');
   totalEl.textContent = data.total.toLocaleString();
 
-  // Change %
   const changeEl = document.querySelector('#stat-change .stat-value');
   changeEl.classList.remove('skeleton');
   if (data.change_pct == null) {
     changeEl.textContent = 'N/A';
-    changeEl.className = 'stat-value';
+    changeEl.className   = 'stat-value';
   } else {
     const arrow = data.change_pct >= 0 ? '▲' : '▼';
     changeEl.textContent = `${arrow} ${Math.abs(data.change_pct)}%`;
-    changeEl.className = `stat-value ${data.change_pct >= 0 ? 'stat-change-pos' : 'stat-change-neg'}`;
+    changeEl.className   = `stat-value ${data.change_pct >= 0 ? 'stat-change-pos' : 'stat-change-neg'}`;
   }
 
-  // Themes
   const themesEl = document.querySelector('#stat-themes .stat-value');
   themesEl.classList.remove('skeleton');
   themesEl.textContent = data.active_themes.toLocaleString();
 }
 
-/* ── Source filter ──────────────────────────────────────────────── */
+/* ── Source checkbox builder ────────────────────────────────────── */
 function buildSourceCheckboxes(containerId, stateKey) {
   const container = document.getElementById(containerId);
   container.innerHTML = Object.entries(SOURCE_META).map(([key, meta]) => `
@@ -322,25 +338,25 @@ function clearTheme() {
   state.quotesOffset  = 0;
   document.getElementById('quotes-board').classList.add('hidden');
   document.getElementById('quotes-empty-state').classList.remove('hidden');
-  // clear active state in themes list
   document.querySelectorAll('.theme-row.active').forEach(r => r.classList.remove('active'));
 }
 
 function renderQuoteCard(q) {
-  const meta = SOURCE_META[q.source] || { icon: '📝', label: q.source };
+  const meta         = SOURCE_META[q.source] || { icon: '📝', label: q.source };
   const urgencyClass = (q.urgency_label || 'low').toLowerCase();
+  const urgencyTip   = URGENCY_TIPS[urgencyClass] || '';
   return `
     <div class="quote-card">
       <div class="quote-meta">
         <span class="source-icon">${meta.icon}</span>
         <span class="source-name">${meta.label}</span>
-        <span>·</span>
+        <span class="sep">·</span>
         <span>@${escHtml(q.user_handle)}</span>
       </div>
       <div class="quote-text">"${escHtml(q.content)}"</div>
       <div class="quote-footer">
         <span class="quote-theme-tag">${escHtml(q.theme)}</span>
-        <span class="urgency-badge ${urgencyClass}">${escHtml(q.urgency_label || 'low')}</span>
+        <span class="urgency-badge ${urgencyClass} tip" data-tip="${urgencyTip}">${escHtml(q.urgency_label || 'low')}</span>
         <span class="sentiment-dot ${q.sentiment}" title="${q.sentiment}"></span>
       </div>
     </div>`;
@@ -349,16 +365,13 @@ function renderQuoteCard(q) {
 async function loadQuotes(append = false) {
   if (!state.selectedTheme) return;
 
-  const qs = buildQuoteParams();
-  const data = await apiFetch(`/api/quotes?${qs}`);
+  const data = await apiFetch(`/api/quotes?${buildQuoteParams()}`);
   const list = document.getElementById('quotes-list');
 
-  if (!append) {
-    list.innerHTML = '';
-  }
+  if (!append) list.innerHTML = '';
 
   if (!data.quotes.length && !append) {
-    list.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:8px">No quotes found</div>';
+    list.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:8px 0">No quotes match these filters</div>';
     document.getElementById('quotes-load-more-wrap').classList.add('hidden');
     return;
   }
@@ -368,11 +381,7 @@ async function loadQuotes(append = false) {
   state.quotesTotal   = data.total;
 
   const loadMoreWrap = document.getElementById('quotes-load-more-wrap');
-  if (state.quotesOffset < state.quotesTotal) {
-    loadMoreWrap.classList.remove('hidden');
-  } else {
-    loadMoreWrap.classList.add('hidden');
-  }
+  loadMoreWrap.classList.toggle('hidden', state.quotesOffset >= state.quotesTotal);
 }
 
 /* ── Main refresh ───────────────────────────────────────────────── */
@@ -399,7 +408,6 @@ async function refresh() {
   renderVolumeChart(volumeData.volume);
   renderThemes(themesData.themes);
 
-  // If a theme is selected, reload quotes under new filters
   if (state.selectedTheme) {
     state.quotesOffset = 0;
     loadQuotes(false);
@@ -412,7 +420,7 @@ async function init() {
   buildSourceCheckboxes('source-checkboxes', 'sources');
   buildSourceCheckboxes('quote-source-checkboxes', 'quoteSources');
 
-  // Load products for dropdown
+  // Products dropdown
   const { products } = await apiFetch('/api/products');
   const productSelect = document.getElementById('product-select');
   products.forEach(p => {
@@ -423,7 +431,7 @@ async function init() {
   });
 
   productSelect.addEventListener('change', () => {
-    state.product = productSelect.value;
+    state.product      = productSelect.value;
     state.selectedTheme = null;
     state.quotesOffset  = 0;
     document.getElementById('quotes-board').classList.add('hidden');
@@ -432,8 +440,7 @@ async function init() {
   });
 
   document.getElementById('time-select').addEventListener('change', (e) => {
-    const val = e.target.value;
-    state.since = val === 'all' ? null : val;
+    state.since = e.target.value === 'all' ? null : e.target.value;
     state.quotesOffset = 0;
     refresh();
   });
@@ -446,11 +453,16 @@ async function init() {
     loadQuotes(false);
   });
 
+  document.getElementById('quote-urgency-select').addEventListener('change', (e) => {
+    state.quoteUrgency = e.target.value || null;
+    state.quotesOffset = 0;
+    loadQuotes(false);
+  });
+
   document.getElementById('quotes-load-more').addEventListener('click', () => {
     loadQuotes(true);
   });
 
-  // Deep Dive
   const deepdiveBtn = document.getElementById('deepdive-btn');
   deepdiveBtn.addEventListener('click', runDeepDive);
   document.getElementById('deepdive-query').addEventListener('keydown', (e) => {
@@ -465,13 +477,13 @@ async function runDeepDive() {
   const query = document.getElementById('deepdive-query').value.trim();
   if (!query) return;
 
-  const btn = document.getElementById('deepdive-btn');
+  const btn        = document.getElementById('deepdive-btn');
   const responseEl = document.getElementById('deepdive-response');
 
-  btn.disabled = true;
-  btn.textContent = '…';
+  btn.disabled     = true;
+  btn.textContent  = '…';
   responseEl.classList.remove('hidden');
-  responseEl.innerHTML = '<div style="color:var(--text-muted)">Thinking…</div>';
+  responseEl.innerHTML = '<div style="color:var(--text-faint);font-style:italic">Thinking…</div>';
 
   try {
     const res = await fetch('/api/deep-dive', {
@@ -480,7 +492,7 @@ async function runDeepDive() {
       body: JSON.stringify({
         query,
         product: state.product !== 'all' ? state.product : undefined,
-        since: state.since || undefined,
+        since:   state.since || undefined,
       }),
     });
     const data = await res.json();
@@ -496,7 +508,7 @@ async function runDeepDive() {
   } catch (err) {
     responseEl.innerHTML = `<div style="color:var(--negative)">Error: ${escHtml(String(err))}</div>`;
   } finally {
-    btn.disabled = false;
+    btn.disabled    = false;
     btn.textContent = 'Ask →';
   }
 }
@@ -508,10 +520,8 @@ function productLabel(slug) {
 
 function escHtml(str) {
   return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /* ── Boot ───────────────────────────────────────────────────────── */

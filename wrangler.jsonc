@@ -26,5 +26,11 @@
       "binding": "FEEDBACK_PIPELINE",
       "class_name": "FeedbackPipeline"
     }
-  ]
+  ],
+
+  // Static assets — public/ is served for all non-Worker-matched paths
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  }
 }

@@ -55,6 +55,6 @@ export default {
       return Response.json({ processed: results.length, done: false });
     }
 
-    return new Response("Thoughtboard API");
+    return env.ASSETS.fetch(request);
   },
 };

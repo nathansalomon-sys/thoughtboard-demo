@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Thoughtboard</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <!-- ─── Header ─────────────────────────────────────────────────── -->
+  <header id="header">
+    <div class="brand">
+      <span class="brand-icon">📊</span>
+      <div>
+        <div class="brand-name">Thoughtboard</div>
+        <div class="brand-tagline">Feedback Intelligence for PMs</div>
+      </div>
+    </div>
+    <div class="header-controls">
+      <div class="control-group">
+        <label for="product-select">Product</label>
+        <select id="product-select">
+          <option value="all">All Products</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="time-select">Time Range</label>
+        <select id="time-select">
+          <option value="all" selected>All Time</option>
+          <option value="7d">Last 7 days</option>
+          <option value="30d">Last 30 days</option>
+          <option value="90d">Last 90 days</option>
+          <option value="1y">Last year</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ─── Row 0: Stats ──────────────────────────────────────────── -->
+    <section id="stats">
+      <div class="stat-card" id="stat-total">
+        <div class="stat-value skeleton">—</div>
+        <div class="stat-label">Total Feedback</div>
+      </div>
+      <div class="stat-card" id="stat-change">
+        <div class="stat-value skeleton">—</div>
+        <div class="stat-label">vs. Prior Period</div>
+      </div>
+      <div class="stat-card" id="stat-themes">
+        <div class="stat-value skeleton">—</div>
+        <div class="stat-label">Active Themes</div>
+      </div>
+    </section>
+
+    <!-- ─── Row 1: Sentiment ──────────────────────────────────────── -->
+    <section id="row1">
+      <div class="card" id="gauge-card">
+        <div class="card-title">Overall Sentiment</div>
+        <div id="gauge-container">
+          <svg id="gauge-svg" viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg">
+            <!-- Background track -->
+            <path id="gauge-red"   d="" fill="none" stroke="#ef4444" stroke-width="16" stroke-linecap="butt" />
+            <path id="gauge-amber" d="" fill="none" stroke="#f59e0b" stroke-width="16" stroke-linecap="butt" />
+            <path id="gauge-green" d="" fill="none" stroke="#22c55e" stroke-width="16" stroke-linecap="butt" />
+            <!-- Needle group — rotated around pivot (100, 100) -->
+            <g id="gauge-needle-group" style="transform-origin: 100px 100px; transform: rotate(0deg); transition: transform 0.8s ease;">
+              <line x1="100" y1="100" x2="100" y2="42" stroke="#1e293b" stroke-width="3" stroke-linecap="round" />
+              <circle cx="100" cy="100" r="5" fill="#1e293b" />
+            </g>
+            <text id="gauge-score-text" x="100" y="116" text-anchor="middle" font-size="13" fill="#64748b" font-family="system-ui, sans-serif">—</text>
+          </svg>
+        </div>
+      </div>
+      <div class="card" id="trend-card">
+        <div class="card-title">Sentiment Trend</div>
+        <div class="chart-wrap">
+          <canvas id="trend-chart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── Row 2: Volume + Themes ───────────────────────────────── -->
+    <section id="row2">
+      <!-- Source filter — shared by volume + themes -->
+      <div id="source-filter-bar">
+        <span class="filter-label">Sources</span>
+        <div id="source-checkboxes"></div>
+      </div>
+      <div class="row2-panels">
+        <div class="card" id="volume-card">
+          <div class="card-title">Feedback Volume</div>
+          <div class="chart-wrap">
+            <canvas id="volume-chart"></canvas>
+          </div>
+        </div>
+        <div class="card" id="themes-card">
+          <div class="card-title">Top Themes</div>
+          <div id="themes-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── Row 3: Quote-board ────────────────────────────────────── -->
+    <section id="row3">
+      <div class="card" id="quotes-card">
+        <!-- Empty state (shown when no theme selected) -->
+        <div id="quotes-empty-state">
+          <div class="empty-icon">💬</div>
+          <div class="empty-text">Click a theme above to explore individual quotes</div>
+        </div>
+
+        <!-- Quote board (hidden until theme selected) -->
+        <div id="quotes-board" class="hidden">
+          <div class="quotes-header">
+            <div>
+              <span class="card-title">Quotes for: </span>
+              <span id="quotes-theme-label" class="theme-label-tag"></span>
+            </div>
+            <button id="quotes-clear-btn" class="btn-icon" title="Clear selection">✕</button>
+          </div>
+          <div class="quotes-filter-bar">
+            <div class="control-group">
+              <label>Source</label>
+              <div id="quote-source-checkboxes" class="inline-checks"></div>
+            </div>
+            <div class="control-group">
+              <label for="quote-sentiment-select">Sentiment</label>
+              <select id="quote-sentiment-select">
+                <option value="">All</option>
+                <option value="positive">Positive</option>
+                <option value="negative">Negative</option>
+                <option value="neutral">Neutral</option>
+              </select>
+            </div>
+          </div>
+          <div id="quotes-list"></div>
+          <div id="quotes-load-more-wrap" class="hidden">
+            <button id="quotes-load-more" class="btn-secondary">Load more</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── Deep Dive ─────────────────────────────────────────────── -->
+    <section id="deepdive">
+      <div class="card" id="deepdive-card">
+        <div class="card-title">Deep Dive</div>
+        <div class="deepdive-input-row">
+          <textarea id="deepdive-query" placeholder="Ask a question about this data… e.g. What are D1's biggest pain points?" rows="2"></textarea>
+          <button id="deepdive-btn" class="btn-primary">Ask →</button>
+        </div>
+        <div id="deepdive-response" class="hidden"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

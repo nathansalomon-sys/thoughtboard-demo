@@ -69,12 +69,15 @@ function arcPath(cx, cy, r, startAngle, endAngle) {
 
 function initGauge() {
   const cx = 100, cy = 100, r = 52;
-  // -180° = left (score=-1), 0° = top, +180° = right (score=+1)
-  // Map score -1..+1 to angle -90°..+90° in SVG coordinate system
-  // Segments: red -90 → -30, amber -30 → +30, green +30 → +90
-  document.getElementById('gauge-red').setAttribute('d',   arcPath(cx, cy, r, 180, 240));
-  document.getElementById('gauge-amber').setAttribute('d', arcPath(cx, cy, r, 240, 300));
-  document.getElementById('gauge-green').setAttribute('d', arcPath(cx, cy, r, 300, 360));
+  // polarToCartesian uses 0°=top, increasing clockwise.
+  // Gauge spans 270° (left/9-o'clock) → 0° (top) → 90° (right/3-o'clock).
+  // Each segment is 60°. Sweep CW (flag=1) from left through top to right.
+  // Red:   270°→330° (left third,  negative)
+  // Amber: 330°→390° (centre third, neutral — crosses 0°/top)
+  // Green:  30°→ 90° (right third,  positive)
+  document.getElementById('gauge-red').setAttribute('d',   arcPath(cx, cy, r, 270, 330));
+  document.getElementById('gauge-amber').setAttribute('d', arcPath(cx, cy, r, 330, 390));
+  document.getElementById('gauge-green').setAttribute('d', arcPath(cx, cy, r,  30,  90));
 }
 
 function setGaugeScore(score) {
@@ -269,7 +272,7 @@ function renderStats(data) {
   const changeEl = document.querySelector('#stat-change .stat-value');
   changeEl.classList.remove('skeleton');
   if (data.change_pct == null) {
-    changeEl.textContent = '—';
+    changeEl.textContent = 'N/A';
     changeEl.className = 'stat-value';
   } else {
     const arrow = data.change_pct >= 0 ? '▲' : '▼';

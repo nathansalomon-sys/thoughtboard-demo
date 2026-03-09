@@ -82,21 +82,23 @@
 
     <!-- ─── Row 2: Volume + Themes ───────────────────────────────── -->
     <section id="row2">
-      <!-- Source filter — shared by volume + themes -->
-      <div id="source-filter-bar">
-        <span class="filter-label">Sources</span>
-        <div id="source-checkboxes"></div>
-      </div>
-      <div class="row2-panels">
-        <div class="card" id="volume-card">
-          <div class="card-title">Feedback Volume</div>
-          <div class="chart-wrap">
-            <canvas id="volume-chart"></canvas>
-          </div>
+      <div class="card" id="row2-card">
+        <!-- Source filter — header of this card, controls both panels below -->
+        <div id="source-filter-bar">
+          <span class="filter-label">Filter by Source</span>
+          <div id="source-checkboxes"></div>
         </div>
-        <div class="card" id="themes-card">
-          <div class="card-title">Top Themes</div>
-          <div id="themes-list"></div>
+        <div class="row2-panels">
+          <div id="volume-panel">
+            <div class="card-title">Feedback Volume</div>
+            <div class="chart-wrap">
+              <canvas id="volume-chart"></canvas>
+            </div>
+          </div>
+          <div id="themes-panel">
+            <div class="card-title">Top Themes</div>
+            <div id="themes-list"></div>
+          </div>
         </div>
       </div>
     </section>
